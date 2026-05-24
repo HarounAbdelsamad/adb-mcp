@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adb-mcp"
+version = "0.1.0"
+description = "Advanced ADB MCP server for Android automation — optimised for small LLMs (gpt-oss-20b, qwen3vl). 15 semantic tools, OCR + Set-of-Mark dual-path screen understanding."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Haroun Abdelsamad", email = "haroun.khaledmostafa@gmail.com"}]
+maintainers = [{name = "Haroun Abdelsamad", email = "haroun.khaledmostafa@gmail.com"}]
+keywords = ["android", "adb", "mcp", "llm", "automation", "agent", "ollama", "claude", "uiautomator", "small-models"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Hardware",
+    "Topic :: Software Development :: Testing",
+    "Intended Audience :: Developers",
+]
+dependencies = [
+    "mcp>=1.7",
+    "adbutils>=2.0",
+    "uiautomator2>=3.0",
+    "paddleocr>=2.7",
+    "Pillow>=10.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/HarounAbdelsamad/adb-mcp"
+Repository = "https://github.com/HarounAbdelsamad/adb-mcp"
+"Bug Tracker" = "https://github.com/HarounAbdelsamad/adb-mcp/issues"
+Changelog = "https://github.com/HarounAbdelsamad/adb-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+adb-mcp = "adb_mcp.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.uv]
+# Dev deps live in [project.optional-dependencies] (pip-compatible).
+# Install with `uv sync --extra dev` or `pip install -e ".[dev]"`.
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

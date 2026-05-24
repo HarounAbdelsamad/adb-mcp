@@ -1,0 +1,14 @@
+adb_path: "C:/platform-tools/adb.exe"
+default_device: null           # set to a device serial to avoid ambiguity with multiple devices
+ocr_enabled: true
+ocr_engine: "paddle"           # paddle | tesseract | none
+screenshot_max_dim: 1280       # downscale screenshots so their longest side is at most this
+som_default_enabled: true      # include numbered SoM overlay in vision/both mode
+destructive_ops_enabled: false # gates the "revoke" action in grant_permission
+logcat_max_lines: 500
+hierarchy_cache_ms: 1500       # reuse a hierarchy dump if it is this fresh (avoids extra round-trips)
+tool_timeouts_ms:
+  default: 10000
+  wait_for: 15000
+  launch_app: 12000
+log_level: "INFO"
