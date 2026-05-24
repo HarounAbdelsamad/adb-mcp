@@ -25,8 +25,8 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Install project
-        run: uv sync --python ${{ matrix.python-version }}
+      - name: Install project (with dev deps)
+        run: uv sync --extra dev --python ${{ matrix.python-version }}
 
       - name: Lint
         run: uv run ruff check src tests

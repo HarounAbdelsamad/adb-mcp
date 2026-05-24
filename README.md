@@ -1,6 +1,6 @@
 # adb-mcp
 
-> Advanced Android Debug Bridge MCP server — optimised for **small LLMs** (gpt-oss-20b, qwen3vl 8–14B).
+> Advanced Android Debug Bridge MCP server — optimised for **small LLMs** (gpt-oss-20b, qwen3vl).
 > 15 semantic tools, OCR + Set-of-Mark dual-path screen understanding, no coordinate hallucinations.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -24,7 +24,9 @@ uv tool install adb-mcp        # or: pip install adb-mcp
 # 2. Plug in a phone with USB debugging enabled, confirm it shows up
 adb devices
 
-# 3. Wire it into Claude Desktop (claude_desktop_config.json)
+# 3. Wire it into any MCP client (the JSON below is the same across
+#    Claude Desktop, Cursor, Cline, Antigravity, OpenCode, LM Studio,
+#    mcphost, …)
 {
   "mcpServers": {
     "adb": { "command": "adb-mcp" }
@@ -32,9 +34,9 @@ adb devices
 }
 ```
 
-Now ask Claude: *"Open Wi-Fi settings on my Android device and turn Wi-Fi off."*
-The model uses `open_settings`, `get_screen`, then `tap` on the toggle — no
-coordinates touched.
+Now ask your agent: *"Open Wi-Fi settings on my Android device and turn Wi-Fi
+off."* The model uses `open_settings`, `get_screen`, then `tap` on the
+toggle — no coordinates touched.
 
 ---
 
@@ -138,8 +140,10 @@ Tested with Ollama-hosted models, BFCL-V4 tool-calling benchmarks, and real
 
 ### Cloud / no GPU
 
-- **Anthropic Claude (Sonnet/Opus)** — strongest tool calling overall.
-- **Ollama Cloud `gpt-oss:120b`** — solid hosted option.
+- **Anthropic Claude** (Sonnet / Opus) — strongest tool calling overall, used by Claude Desktop, Cursor, Cline, OpenCode.
+- **OpenAI GPT-4o / GPT-4.1** — top-tier tool calling, works with any OpenAI-compatible MCP host.
+- **Ollama Cloud `gpt-oss:120b`** — open-weights frontier model via hosted Ollama.
+- **Google Gemini** — via Antigravity or OpenAI-compatible bridges.
 
 > 💡 If you're unsure: **start with `qwen3:14b`** on 16 GB VRAM. It's the best
 > balance of tool-calling accuracy, context headroom, and inference speed for
@@ -263,29 +267,127 @@ Samsung — selectors are resolution-independent.
 
 ---
 
-## Wiring it up
+## Compatible clients
+
+`adb-mcp` speaks the standard Model Context Protocol over stdio, so it works
+with every MCP-capable host. Ready-to-use snippets live in
+[examples/](examples/). The `mcpServers` JSON shape is shared across most
+clients — usually you just paste the snippet into the right config file.
 
 ### Claude Desktop
 
-`claude_desktop_config.json` (see [examples/](examples/claude_desktop_config.json)):
+File: `claude_desktop_config.json` ([example](examples/claude_desktop_config.json))
 
 ```json
 {
   "mcpServers": {
     "adb": {
       "command": "adb-mcp",
-      "env": {
-        "ADB_MCP_CONFIG": "C:\\path\\to\\config.yaml"
-      }
+      "env": { "ADB_MCP_CONFIG": "C:\\path\\to\\config.yaml" }
     }
   }
 }
 ```
 
-### Ollama / custom agent
+### Cursor
 
-Any stdio-transport MCP client works. Point it at `adb-mcp` and pass
-`ADB_MCP_CONFIG` if you want a custom config path.
+File: `~/.cursor/mcp.json` (or project-local `.cursor/mcp.json`) ([example](examples/cursor.mcp.json))
+
+```json
+{
+  "mcpServers": {
+    "adb": { "command": "adb-mcp" }
+  }
+}
+```
+
+### Cline (VS Code)
+
+File: `cline_mcp_settings.json` in the Cline VS Code extension settings ([example](examples/cline_mcp_settings.json))
+
+```json
+{
+  "mcpServers": {
+    "adb": {
+      "command": "adb-mcp",
+      "disabled": false,
+      "autoApprove": ["get_screen", "list_devices", "device_info", "wait_for"]
+    }
+  }
+}
+```
+
+### Antigravity
+
+File: `antigravity_mcp_config.json` in your Antigravity workspace ([example](examples/antigravity_mcp_config.json))
+
+```json
+{
+  "mcpServers": {
+    "adb": { "command": "adb-mcp" }
+  }
+}
+```
+
+### OpenCode
+
+File: `opencode.json` in the project root ([example](examples/opencode.json))
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "adb": {
+      "type": "local",
+      "command": ["adb-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### LM Studio
+
+File: `mcp.json` in your LM Studio config directory, or via the in-app
+**Program → Install → Edit `mcp.json`** button ([example](examples/lmstudio_mcp.json))
+
+```json
+{
+  "mcpServers": {
+    "adb": { "command": "adb-mcp" }
+  }
+}
+```
+
+LM Studio reuses the standard `mcpServers` shape — once saved, the tools
+appear in any chat using a tool-capable local model (Qwen3, Llama 3.1,
+Hermes, etc.).
+
+### Ollama (via mcphost)
+
+Ollama itself doesn't speak MCP. Use [mcphost](https://github.com/mark3labs/mcphost)
+(or any OpenAI-compatible MCP bridge) to bolt local models onto MCP servers:
+
+```bash
+# Install mcphost, then point it at adb-mcp + your favourite Ollama model
+mcphost --config examples/mcphost.json --model ollama:qwen3:14b
+```
+
+`examples/mcphost.json`:
+
+```json
+{
+  "mcpServers": {
+    "adb": { "command": "adb-mcp" }
+  }
+}
+```
+
+### Anything else
+
+Any stdio-transport MCP client works — point it at the `adb-mcp` binary and
+optionally set `ADB_MCP_CONFIG` to your config file. If your favourite client
+isn't listed above, add a snippet in [examples/](examples/) and open a PR.
 
 ---
 

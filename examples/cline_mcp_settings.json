@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "adb": {
+      "command": "adb-mcp",
+      "env": {
+        "ADB_MCP_CONFIG": "C:\\path\\to\\your\\config.yaml"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_screen",
+        "list_devices",
+        "device_info",
+        "wait_for",
+        "list_packages",
+        "app_info",
+        "get_logcat",
+        "dumpsys_query"
+      ]
+    }
+  }
+}

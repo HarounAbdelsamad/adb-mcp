@@ -11,7 +11,11 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Haroun Abdelsamad", email = "haroun.khaledmostafa@gmail.com"}]
 maintainers = [{name = "Haroun Abdelsamad", email = "haroun.khaledmostafa@gmail.com"}]
-keywords = ["android", "adb", "mcp", "llm", "automation", "agent", "ollama", "claude", "uiautomator", "small-models"]
+keywords = [
+    "android", "adb", "mcp", "mcp-server", "llm", "automation", "agent",
+    "ollama", "claude", "cursor", "cline", "antigravity", "opencode", "lmstudio",
+    "uiautomator", "small-models",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",

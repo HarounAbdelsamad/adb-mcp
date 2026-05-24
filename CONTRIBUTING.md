@@ -83,7 +83,9 @@ These are **hard limits**, not preferences:
 - Better OCR engines (Tesseract path improvements, language packs).
 - A demo `.gif` for the README (drop into `assets/`).
 - Sample agent prompts in `docs/agent_prompts.md` showing how to instruct
-  different models (gpt-oss-20b, qwen3vl, Claude) to use the server well.
+  different models (gpt-oss-20b, qwen3vl, Claude, GPT-4o, Gemini) to use the
+  server well.
+- More client config snippets in `examples/` (Continue.dev, Goose, Zed, …).
 
 ## Code of conduct
 
