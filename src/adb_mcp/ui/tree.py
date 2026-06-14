@@ -47,6 +47,25 @@ class UiNode:
             "children": self.children,
         }
 
+    def to_compact(self) -> dict:
+        """Lean serialization for model consumption — omits layout/structural fields."""
+        short_cls = self.cls.rsplit(".", 1)[-1] if self.cls else ""
+        rid = self.resource_id
+        if "/" in rid:
+            rid = rid.split("/", 1)[-1]
+        d: dict = {"id": self.id, "class": short_cls}
+        if self.text:
+            d["text"] = self.text
+        if self.content_desc and self.content_desc != self.text:
+            d["content_desc"] = self.content_desc
+        if rid:
+            d["resource_id"] = rid
+        if self.scrollable:
+            d["scrollable"] = True
+        if self.checked is not None:
+            d["checked"] = self.checked
+        return d
+
 
 def _parse_bounds(bounds_str: str) -> tuple[int, int, int, int]:
     """Parse '[x1,y1][x2,y2]' → (x1, y1, x2, y2)."""
@@ -75,8 +94,8 @@ def _is_interactable(elem: ET.Element) -> bool:
     return clickable or long_clickable or scrollable or bool(text) or bool(desc)
 
 
-def parse_hierarchy(xml_str: str, max_nodes: int = 80) -> list[UiNode]:
-    """Parse uiautomator XML dump into a list of UiNode, DFS order."""
+def parse_hierarchy(xml_str: str, max_nodes: int = 80) -> tuple[list[UiNode], bool]:
+    """Parse uiautomator XML dump into (nodes, truncated) where truncated=True if pruned."""
     root = ET.fromstring(xml_str)
     nodes: list[UiNode] = []
     _id_counter = [0]
@@ -132,26 +151,39 @@ def parse_hierarchy(xml_str: str, max_nodes: int = 80) -> list[UiNode]:
     return _prune(nodes, max_nodes)
 
 
-def _prune(nodes: list[UiNode], max_nodes: int) -> list[UiNode]:
+def _node_score(n: UiNode) -> int:
+    s = 0
+    if n.clickable:
+        s += 10
+    if n.text:
+        s += 6
+    if n.content_desc:
+        s += 4
+    if n.focusable:
+        s += 2
+    area = n.bounds["w"] * n.bounds["h"]
+    s += min(area // 10000, 5)
+    return s
+
+
+def _prune(nodes: list[UiNode], max_nodes: int) -> tuple[list[UiNode], bool]:
     if len(nodes) <= max_nodes:
-        return nodes
+        return nodes, False
 
-    def score(n: UiNode) -> int:
-        s = 0
-        if n.clickable:
-            s += 10
-        if n.text:
-            s += 6
-        if n.content_desc:
-            s += 4
-        if n.focusable:
-            s += 2
-        area = n.bounds["w"] * n.bounds["h"]
-        s += min(area // 10000, 5)
-        return s
+    # Clickable/scrollable nodes must always survive pruning — they are action targets.
+    must_keep = [n for n in nodes if n.clickable or n.long_clickable or n.scrollable]
+    can_trim = [n for n in nodes if not (n.clickable or n.long_clickable or n.scrollable)]
 
-    ranked = sorted(nodes, key=score, reverse=True)
-    kept_ids = {n.id for n in ranked[:max_nodes]}
+    if len(must_keep) >= max_nodes:
+        # Even the essential set exceeds budget — rank and keep top ones.
+        ranked = sorted(must_keep, key=_node_score, reverse=True)
+        kept = ranked[:max_nodes]
+    else:
+        remaining = max_nodes - len(must_keep)
+        ranked_trim = sorted(can_trim, key=_node_score, reverse=True)
+        kept = must_keep + ranked_trim[:remaining]
+
+    kept_ids = {n.id for n in kept}
     pruned = [n for n in nodes if n.id in kept_ids]
 
     # Fix parent/children to only reference kept nodes.
@@ -160,4 +192,37 @@ def _prune(nodes: list[UiNode], max_nodes: int) -> list[UiNode]:
         if n.parent is not None and n.parent not in kept_ids:
             n.parent = None
 
-    return pruned
+    return pruned, True
+
+
+def nodes_to_text_list(nodes: list[UiNode]) -> str:
+    """Render nodes as a numbered text list — one actionable element per line.
+
+    Format: ``<id> [ClassName] "label" [flags]``
+    This is the compact tree representation sent to text-only models.
+    """
+    lines: list[str] = []
+    for n in nodes:
+        short_cls = n.cls.rsplit(".", 1)[-1] if n.cls else ""
+        label = n.text or n.content_desc or ""
+        rid = n.resource_id.split("/", 1)[-1] if "/" in n.resource_id else n.resource_id
+
+        flags: list[str] = []
+        if n.scrollable:
+            flags.append("scroll")
+        if n.checked is True:
+            flags.append("checked")
+        elif n.checked is False:
+            flags.append("unchecked")
+
+        flag_str = f" [{', '.join(flags)}]" if flags else ""
+
+        if label:
+            line = f'{n.id} [{short_cls}] "{label}"{flag_str}'
+        elif rid:
+            line = f'{n.id} [{short_cls}] @{rid}{flag_str}'
+        else:
+            line = f"{n.id} [{short_cls}]{flag_str}"
+
+        lines.append(line)
+    return "\n".join(lines)

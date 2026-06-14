@@ -12,7 +12,7 @@ class ToolTimeouts(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
     default: int = 10_000
     wait_for: int = 15_000
-    launch_app: int = 12_000
+    launch_app: int = 15_000
 
 
 class Config(BaseSettings):
@@ -33,7 +33,17 @@ class Config(BaseSettings):
     logcat_max_lines: int = 500
     hierarchy_cache_ms: int = 1500
     tool_timeouts_ms: ToolTimeouts = ToolTimeouts()
+    app_ui_settle_ms: int = 2500
     log_level: str = "INFO"
+    tree_verbosity: str = "compact"   # compact | full
+
+    @field_validator("tree_verbosity")
+    @classmethod
+    def _valid_verbosity(cls, v: str) -> str:
+        allowed = {"compact", "full"}
+        if v not in allowed:
+            raise ValueError(f"tree_verbosity must be one of {allowed}")
+        return v
 
     @field_validator("ocr_engine")
     @classmethod

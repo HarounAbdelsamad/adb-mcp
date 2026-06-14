@@ -151,6 +151,39 @@ Tested with Ollama-hosted models, BFCL-V4 tool-calling benchmarks, and real
 
 ---
 
+## System prompt for small models (LM Studio / Ollama)
+
+Copy this into the **System** prompt of your LM Studio / Ollama host when using a ≤20B model. It embeds the scoped-flow playbook that makes these models reliable:
+
+```
+You control an Android device via ADB. Follow these rules exactly.
+
+OBSERVATION
+- Before acting, call get_screen(mode='text').
+- The 'tree' field is a numbered list: "<id> [Class] \"label\"".
+- Always act by id: tap(selector={"id": 12}).
+- Prefer id > text > content_desc > resource_id > coordinates.
+
+ACTING
+- tap() and swipe() return screen_changed plus the new tree — no extra get_screen needed.
+- If screen_changed is false, the action had no effect. Re-read and try a different selector.
+- If the response contains truncated:true, swipe up/down to reveal more content.
+
+SETTINGS & APP LAUNCH
+- Android system settings: open_settings(panel='wifi' | 'bluetooth' | 'airplane_mode' | ...).
+- To open an app: launch_app(app_name='Bixby'). Check foreground:true before continuing.
+- To reach an app's own settings after launch: navigate_in_app_settings().
+
+AMBIGUOUS SELECTOR
+- If you get SELECTOR_AMBIGUOUS, read the 'candidates' list and re-tap by id.
+
+GOAL CONFIRMATION
+- Only report success after the desired state is visible in the returned screen tree.
+- Never fabricate a result. If unsure, call get_screen and verify.
+```
+
+---
+
 ## Configuration
 
 ```bash
@@ -166,6 +199,7 @@ cp config.example.yaml config.yaml
 | `screenshot_max_dim` | `1280` | Downscale screenshots to this max dimension |
 | `som_default_enabled` | `true` | Overlay numbered badges on vision screenshots |
 | `destructive_ops_enabled` | `false` | Allow `grant_permission` revoke action |
+| `tree_verbosity` | `compact` | `compact` (numbered text list) or `full` (JSON with all fields) |
 
 Override any key with `ADB_MCP_` env vars, e.g. `ADB_MCP_LOG_LEVEL=DEBUG`.
 
@@ -194,10 +228,22 @@ Override any key with `ADB_MCP_` env vars, e.g. `ADB_MCP_LOG_LEVEL=DEBUG`.
 ### `get_screen` — dual-path explained
 
 ```text
-mode="text"    →  tree (JSON) + OCR spans (JSON)        ← gpt-oss-20b (no vision)
-mode="vision"  →  tree (JSON) + SoM-annotated PNG       ← qwen3vl, qwen2.5vl
-mode="both"    →  all three                             ← default
+mode="text"    →  tree (compact numbered list) + OCR spans   ← gpt-oss-20b (no vision)
+mode="vision"  →  tree (compact list) + SoM-annotated PNG    ← qwen3vl, qwen2.5vl
+mode="both"    →  all three                                  ← default
 ```
+
+With `tree_verbosity=compact` (default) the tree field is a plain text list — far fewer tokens than the full JSON, which matters for 14B/20B models:
+
+```text
+0 [TextView] "Wi-Fi"
+1 [Switch] "Wi-Fi" [checked]
+2 [TextView] "Bluetooth"
+3 [Switch] "Bluetooth" [unchecked]
+4 [LinearLayout] @settings_list [scroll]
+```
+
+Set `tree_verbosity=full` in `config.yaml` to get the original full JSON tree.
 
 The integer `id` in every tree node matches the badge number in the image
 and is accepted directly by `tap`:

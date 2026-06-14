@@ -15,9 +15,95 @@ _paddle_engine: object | None = None
 def _get_paddle():
     global _paddle_engine
     if _paddle_engine is None:
+        import os
+
+        # Skip slow model-host connectivity checks on first init.
+        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         from paddleocr import PaddleOCR  # type: ignore
-        _paddle_engine = PaddleOCR(lang="en", use_angle_cls=False, show_log=False)
+
+        _paddle_engine = PaddleOCR(
+            lang="en",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+            enable_mkldnn=False,  # required on Windows + PaddlePaddle 3.3.x CPU
+        )
     return _paddle_engine
+
+
+def _poly_to_bbox(poly) -> dict[str, int]:
+    if poly is None:
+        return {"x": 0, "y": 0, "w": 0, "h": 0}
+    try:
+        if len(poly) == 0:
+            return {"x": 0, "y": 0, "w": 0, "h": 0}
+    except TypeError:
+        return {"x": 0, "y": 0, "w": 0, "h": 0}
+    xs = [float(p[0]) for p in poly]
+    ys = [float(p[1]) for p in poly]
+    x, y = int(min(xs)), int(min(ys))
+    return {"x": x, "y": y, "w": int(max(xs) - min(xs)), "h": int(max(ys) - min(ys))}
+
+
+def _page_to_dict(page) -> dict:
+    if isinstance(page, dict):
+        return page
+    if hasattr(page, "json"):
+        data = page.json
+        if isinstance(data, dict):
+            return data
+    return getattr(page, "__dict__", {})
+
+
+def _parse_paddle_results(results) -> list[dict]:
+    """Normalize PaddleOCR 2.x and 3.x result shapes into OCR spans."""
+    spans: list[dict] = []
+    if not results:
+        return spans
+
+    # PaddleOCR 3.x: list of dict-like page results from predict().
+    for page in results:
+        data = _page_to_dict(page)
+        texts = data.get("rec_texts") or data.get("rec_text") or []
+        scores = data.get("rec_scores") or data.get("rec_score") or []
+        polys = data.get("rec_polys") or data.get("dt_polys") or data.get("dt_polygons") or []
+        if texts:
+            for i, text in enumerate(texts):
+                text = str(text).strip()
+                if not text:
+                    continue
+                conf = float(scores[i]) if i < len(scores) else 0.0
+                bbox = _poly_to_bbox(polys[i] if i < len(polys) else [])
+                spans.append({"text": text, "bbox": bbox, "conf": round(conf, 3)})
+            continue
+
+        # Some builds expose a single "res" payload.
+        res = data.get("res")
+        if isinstance(res, dict):
+            texts = res.get("rec_texts") or []
+            scores = res.get("rec_scores") or []
+            polys = res.get("dt_polys") or []
+            for i, text in enumerate(texts):
+                text = str(text).strip()
+                if not text:
+                    continue
+                conf = float(scores[i]) if i < len(scores) else 0.0
+                bbox = _poly_to_bbox(polys[i] if i < len(polys) else [])
+                spans.append({"text": text, "bbox": bbox, "conf": round(conf, 3)})
+
+    if spans:
+        return spans
+
+    # PaddleOCR 2.x: [[ [box,(text,conf)], ... ]]
+    lines = results[0] if results and isinstance(results[0], list) else results
+    for line in lines or []:
+        if not line or len(line) < 2:
+            continue
+        box_pts, rec = line[0], line[1]
+        text = rec[0] if isinstance(rec, (list, tuple)) else str(rec)
+        conf = float(rec[1]) if isinstance(rec, (list, tuple)) and len(rec) > 1 else 0.0
+        spans.append({"text": str(text), "bbox": _poly_to_bbox(box_pts), "conf": round(conf, 3)})
+    return spans
 
 
 def _iou(b1: dict, b2: dict) -> float:
@@ -50,19 +136,11 @@ def run_ocr(image: Image.Image) -> list[dict]:
 
 def _run_paddle(image: Image.Image) -> list[dict]:
     try:
+        import numpy as np
+
         engine = _get_paddle()
-        results = engine.ocr(image, cls=False)
-        spans: list[dict] = []
-        if not results or not results[0]:
-            return spans
-        for line in results[0]:
-            box_pts, (text, conf) = line
-            xs = [p[0] for p in box_pts]
-            ys = [p[1] for p in box_pts]
-            x, y = int(min(xs)), int(min(ys))
-            w, h = int(max(xs) - min(xs)), int(max(ys) - min(ys))
-            spans.append({"text": text, "bbox": {"x": x, "y": y, "w": w, "h": h}, "conf": round(float(conf), 3)})
-        return spans
+        results = engine.predict(np.array(image))
+        return _parse_paddle_results(results)
     except Exception:
         log.exception("PaddleOCR failed")
         return []

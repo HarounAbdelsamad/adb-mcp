@@ -10,5 +10,6 @@ hierarchy_cache_ms: 1500       # reuse a hierarchy dump if it is this fresh (avo
 tool_timeouts_ms:
   default: 10000
   wait_for: 15000
-  launch_app: 12000
+  launch_app: 15000          # poll until app reaches foreground after launch_app
+app_ui_settle_ms: 2500       # pause before navigate_in_app_settings reads the UI tree
 log_level: "INFO"

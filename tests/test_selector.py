@@ -59,7 +59,7 @@ def _patch_cache(monkeypatch, cache):
 
 
 def test_resolve_by_text(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     res = resolve({"text": "Wi-Fi"}, SERIAL)
     assert res.strategy in ("text", "resource_id", "composite")
@@ -68,7 +68,7 @@ def test_resolve_by_text(monkeypatch):
 
 
 def test_resolve_by_resource_id(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     res = resolve({"resource_id": "com.android.settings:id/btn_connect"}, SERIAL)
     assert res.node is not None
@@ -76,7 +76,7 @@ def test_resolve_by_resource_id(monkeypatch):
 
 
 def test_resolve_by_content_desc(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     res = resolve({"content_desc": "Connect to network"}, SERIAL)
     assert res.node is not None
@@ -84,7 +84,7 @@ def test_resolve_by_content_desc(monkeypatch):
 
 
 def test_resolve_by_text_contains(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     res = resolve({"text_contains": "Network"}, SERIAL)
     assert res.node is not None
@@ -92,7 +92,7 @@ def test_resolve_by_text_contains(monkeypatch):
 
 
 def test_resolve_by_som_id(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     cache = _make_cache(nodes)
     _patch_cache(monkeypatch, cache)
     # Pick any node id
@@ -103,7 +103,7 @@ def test_resolve_by_som_id(monkeypatch):
 
 
 def test_resolve_no_match_raises(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     with pytest.raises(AgentError) as exc_info:
         resolve({"text": "ThisTextDoesNotExist12345"}, SERIAL)
@@ -111,7 +111,7 @@ def test_resolve_no_match_raises(monkeypatch):
 
 
 def test_resolve_ambiguous_raises(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     # "Wi-Fi" substring matches both "Wi-Fi" and "Wi-Fi calling"
     with pytest.raises(AgentError) as exc_info:
@@ -120,7 +120,7 @@ def test_resolve_ambiguous_raises(monkeypatch):
 
 
 def test_resolve_index_disambiguates(monkeypatch):
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     _patch_cache(monkeypatch, _make_cache(nodes))
     # Exact text "Wi-Fi" is unique so index should work
     res = resolve({"text": "Wi-Fi", "index": 0}, SERIAL)
@@ -128,11 +128,54 @@ def test_resolve_index_disambiguates(monkeypatch):
 
 
 def test_score_resource_id_highest():
-    nodes = parse_hierarchy(FIXTURE_XML)
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
     connect = next(n for n in nodes if n.resource_id == "com.android.settings:id/btn_connect")
     s_rid = _score_node(connect, {"resource_id": "com.android.settings:id/btn_connect"})
     s_text = _score_node(connect, {"text": "Connect"})
     assert s_rid > s_text, "resource_id match should outscore text match"
+
+
+def test_cross_field_text_vs_content_desc(monkeypatch):
+    """text selector should match against content_desc when node.text is empty."""
+    from adb_mcp.ui.selector import _score_node as score
+
+    class FakeNode:
+        text = ""
+        content_desc = "Settings"
+        resource_id = "com.foo:id/btn"
+        cls = "Button"
+        package = ""
+        clickable = True
+        long_clickable = False
+
+    s = score(FakeNode(), {"text": "Settings"})
+    assert s > 0, "Should match content_desc when text is empty"
+
+
+def test_normalize_diacritics():
+    from adb_mcp.ui.selector import _normalize
+    assert _normalize("Einstellungen") == "einstellungen"
+    assert _normalize("  Wi-Fi  ") == "wi-fi"
+
+
+def test_ambiguous_hint_contains_id():
+    """SELECTOR_AMBIGUOUS hint must include a numeric id so model can re-tap."""
+    nodes, _ = parse_hierarchy(FIXTURE_XML)
+    cache = SnapshotCache()
+    cache.put(SERIAL, nodes, "", None)
+    import adb_mcp.ui.selector as sel_mod
+
+    orig = sel_mod.snapshot_cache
+    sel_mod.snapshot_cache = cache
+    try:
+        with pytest.raises(AgentError) as exc_info:
+            resolve({"text_contains": "Wi-Fi"}, SERIAL)
+        if exc_info.value.code == ErrorCode.SELECTOR_AMBIGUOUS:
+            hint = exc_info.value.hint
+            # hint should reference a numeric id
+            assert any(c.isdigit() for c in hint), "Ambiguity hint must mention an id number"
+    finally:
+        sel_mod.snapshot_cache = orig
 
 
 def test_no_snapshot_with_coords_fallback(monkeypatch):

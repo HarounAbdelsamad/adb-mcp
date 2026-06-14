@@ -11,7 +11,7 @@ from ..device import device_manager
 from ..errors import AgentError, ErrorCode, tool_safe
 from ..ui.ocr import merge_with_tree, run_ocr
 from ..ui.som import annotate_to_base64
-from ..ui.tree import parse_hierarchy
+from ..ui.tree import nodes_to_text_list, parse_hierarchy
 from ..util.cache import snapshot_cache
 from ..util.screenshot import capture, downscale, to_base64_png
 
@@ -31,7 +31,7 @@ def _build_screen_payload(
     d = device_manager.resolve_u2(serial)
 
     xml = d.dump_hierarchy(compressed=False)
-    nodes = parse_hierarchy(xml, max_nodes=max_nodes)
+    nodes, truncated = parse_hierarchy(xml, max_nodes=max_nodes)
 
     # Screenshot (always capture; we need it for SoM or to pass to OCR)
     img = capture(d)
@@ -57,12 +57,25 @@ def _build_screen_payload(
 
     snap = snapshot_cache.put(serial, nodes, xml, img)
 
+    # Build tree payload: compact numbered list for text-oriented modes,
+    # full JSON only when the caller explicitly requests full verbosity.
+    use_compact = cfg.tree_verbosity == "compact" and mode in ("text", "both")
     payload: dict[str, Any] = {
         "ok": True,
         "snapshot_id": snap.snapshot_id,
         "screen": {"w": w_orig, "h": h_orig},
-        "tree": [n.to_dict() for n in nodes],
     }
+    if use_compact:
+        payload["tree"] = nodes_to_text_list(nodes)
+    else:
+        payload["tree"] = [n.to_dict() for n in nodes]
+
+    if truncated:
+        payload["truncated"] = True
+        payload["truncated_hint"] = (
+            "Some elements were pruned. If your target is not listed, "
+            "try swipe('up') to reveal more content, then call get_screen again."
+        )
 
     if include_ocr and mode in ("text", "both"):
         payload["ocr"] = ocr_spans
@@ -75,6 +88,15 @@ def _build_screen_payload(
         payload["image_mime"] = "image/png"
 
     return payload
+
+
+def capture_compact_screen(serial: str, max_nodes: int = 100) -> dict[str, Any]:
+    """Lightweight post-action observation — tree only, no OCR, no screenshot.
+
+    Used by input tools to provide immediate feedback after tap/swipe/type.
+    Returns the same compact tree format as get_screen(mode='text').
+    """
+    return _build_screen_payload(serial, mode="text", include_ocr=False, max_nodes=max_nodes)
 
 
 @tool_safe
@@ -109,7 +131,7 @@ def _wait_for(
         except Exception as exc:
             raise AgentError(ErrorCode.UIAUTOMATOR_NOT_READY, str(exc)) from exc
 
-        nodes = parse_hierarchy(xml)
+        nodes, _ = parse_hierarchy(xml)
         snapshot_cache.put(serial, nodes, xml)
 
         found = False

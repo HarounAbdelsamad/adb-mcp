@@ -39,7 +39,7 @@ def _make_image(w: int = 1080, h: int = 1920) -> Image.Image:
 
 
 def test_annotate_returns_image():
-    nodes = parse_hierarchy(SIMPLE_XML)
+    nodes, _ = parse_hierarchy(SIMPLE_XML)
     img = _make_image()
     result = annotate(img, nodes)
     assert isinstance(result, Image.Image)
@@ -47,7 +47,7 @@ def test_annotate_returns_image():
 
 
 def test_annotate_does_not_modify_original():
-    nodes = parse_hierarchy(SIMPLE_XML)
+    nodes, _ = parse_hierarchy(SIMPLE_XML)
     img = _make_image()
     original_pixel = img.getpixel((0, 0))
     annotate(img, nodes)
@@ -55,7 +55,7 @@ def test_annotate_does_not_modify_original():
 
 
 def test_annotate_to_base64_valid_png():
-    nodes = parse_hierarchy(SIMPLE_XML)
+    nodes, _ = parse_hierarchy(SIMPLE_XML)
     img = _make_image()
     b64 = annotate_to_base64(img, nodes)
     decoded = base64.b64decode(b64)
@@ -73,7 +73,7 @@ def test_palette_cycles():
 
 def test_scale_parameter():
     """scale != 1.0 should still produce a valid image."""
-    nodes = parse_hierarchy(SIMPLE_XML)
+    nodes, _ = parse_hierarchy(SIMPLE_XML)
     img = _make_image(540, 960)  # half-size
     result = annotate(img, nodes, scale=0.5)
     assert isinstance(result, Image.Image)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,32 +22,59 @@ class Resolution:
     candidates_considered: int
 
 
+def _normalize(s: str) -> str:
+    """Lowercase, strip diacritics, and collapse whitespace for fuzzy comparison."""
+    nfkd = unicodedata.normalize("NFKD", s)
+    ascii_approx = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return " ".join(ascii_approx.lower().split())
+
+
 def _text_sim(a: str, b: str) -> float:
-    return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    return difflib.SequenceMatcher(None, _normalize(a), _normalize(b)).ratio()
+
+
+def _resource_id_token(rid: str) -> str:
+    """Strip package prefix from a resource-id, e.g. 'com.foo:id/bar' → 'bar'."""
+    return rid.split("/", 1)[-1] if "/" in rid else rid
 
 
 def _score_node(node: UiNode, sel: dict) -> int:
     score = 0
 
     rid = sel.get("resource_id")
-    if rid and node.resource_id == rid:
-        score += 10
+    if rid:
+        if node.resource_id == rid:
+            score += 10
+        elif _resource_id_token(node.resource_id) == _resource_id_token(rid):
+            score += 8
 
     text = sel.get("text")
-    if text and node.text == text:
-        score += 6
-    elif text and _text_sim(node.text, text) > 0.85:
-        score += 4
+    if text:
+        if node.text == text:
+            score += 6
+        elif _text_sim(node.text, text) > 0.85:
+            score += 4
+        # Cross-language / paraphrase: match against content_desc when text is empty
+        elif not node.text and _text_sim(node.content_desc, text) > 0.85:
+            score += 3
 
     text_contains = sel.get("text_contains")
-    if text_contains and text_contains.lower() in node.text.lower():
-        score += 2
+    if text_contains:
+        tc_norm = _normalize(text_contains)
+        if tc_norm in _normalize(node.text):
+            score += 2
+        elif not node.text and tc_norm in _normalize(node.content_desc):
+            score += 1
 
     desc = sel.get("content_desc")
-    if desc and node.content_desc == desc:
-        score += 4
-    elif desc and _text_sim(node.content_desc, desc) > 0.85:
-        score += 2
+    if desc:
+        if node.content_desc == desc:
+            score += 4
+        elif _text_sim(node.content_desc, desc) > 0.85:
+            score += 2
+        # Also match against text when content_desc is absent
+        elif not node.content_desc and _text_sim(node.text, desc) > 0.85:
+            score += 2
 
     cls = sel.get("class")
     if cls and cls in node.cls:
@@ -144,14 +172,24 @@ def resolve(
         chosen = tied[explicit_index]
     else:
         # Multiple matches with equal score and no explicit index — ambiguous.
+        # Return compact candidates with their SoM `id` so the model can re-tap by id.
         top3 = [
-            {"id": n.id, "text": n.text, "content_desc": n.content_desc, "resource_id": n.resource_id}
-            for _, n in scored[:3]
+            {
+                "id": n.id,
+                "text": n.text,
+                "content_desc": n.content_desc,
+                "resource_id": _resource_id_token(n.resource_id),
+            }
+            for n in tied[:3]
         ]
         raise AgentError(
             ErrorCode.SELECTOR_AMBIGUOUS,
             f"Selector matched {len(tied)} elements with equal score.",
-            hint="Narrow with resource_id or pass index:N to pick the Nth match.",
+            hint=(
+                "Re-tap using the numeric id from the candidates list below, e.g. "
+                f"tap(selector={{\"id\": {top3[0]['id']}}}). "
+                "Or narrow with resource_id."
+            ),
             extra={"candidates": top3, "selector": selector},
         )
 

@@ -11,6 +11,25 @@ from ..errors import AgentError, ErrorCode, tool_safe
 from ..ui.selector import resolve
 from ..util.cache import snapshot_cache
 
+# Imported lazily to avoid a module-level circular dependency; both modules live
+# in the same package but neither imports the other at the top level.
+def _observe(serial: str) -> dict:
+    from .screen import capture_compact_screen  # noqa: PLC0415
+    return capture_compact_screen(serial)
+
+
+def _label_set(snap) -> frozenset[str]:
+    """Extract the set of visible text/content_desc labels from a snapshot."""
+    if snap is None:
+        return frozenset()
+    labels: set[str] = set()
+    for n in snap.nodes:
+        if n.text:
+            labels.add(n.text)
+        if n.content_desc:
+            labels.add(n.content_desc)
+    return frozenset(labels)
+
 log = logging.getLogger(__name__)
 
 # Map friendly key names → uiautomator2 key names / Android keycodes
@@ -48,6 +67,7 @@ def _tap(
     x: int | None = None,
     y: int | None = None,
     long_press: bool = False,
+    observe: bool = True,
     device_serial: str | None = None,
 ) -> dict[str, Any]:
     serial = _serial(device_serial)
@@ -68,6 +88,8 @@ def _tap(
             "Provide either selector or x,y coordinates.",
         )
 
+    pre_labels = _label_set(snapshot_cache.get(serial))
+
     if long_press:
         d.long_click(tx, ty)
     else:
@@ -76,12 +98,21 @@ def _tap(
     # Invalidate cache so next get_screen is fresh
     snapshot_cache.invalidate(serial)
 
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "resolved": {"strategy": strategy, "node": node_info},
         "x": tx,
         "y": ty,
     }
+
+    if observe:
+        time.sleep(0.25)
+        screen = _observe(serial)
+        post_labels = _label_set(snapshot_cache.get(serial))
+        result["screen_changed"] = pre_labels != post_labels
+        result["screen"] = screen
+
+    return result
 
 
 @tool_safe
@@ -94,6 +125,7 @@ def _swipe(
     x2: int | None = None,
     y2: int | None = None,
     duration_ms: int = 300,
+    observe: bool = True,
     device_serial: str | None = None,
 ) -> dict[str, Any]:
     serial = _serial(device_serial)
@@ -130,9 +162,20 @@ def _swipe(
             "Provide direction, from_selector+to_selector, or x1,y1,x2,y2.",
         )
 
+    pre_labels = _label_set(snapshot_cache.get(serial))
     d.swipe(sx1, sy1, sx2, sy2, duration=duration_ms / 1000)
     snapshot_cache.invalidate(serial)
-    return {"ok": True, "from": {"x": sx1, "y": sy1}, "to": {"x": sx2, "y": sy2}}
+
+    result: dict[str, Any] = {"ok": True, "from": {"x": sx1, "y": sy1}, "to": {"x": sx2, "y": sy2}}
+
+    if observe:
+        time.sleep(0.35)
+        screen = _observe(serial)
+        post_labels = _label_set(snapshot_cache.get(serial))
+        result["screen_changed"] = pre_labels != post_labels
+        result["screen"] = screen
+
+    return result
 
 
 @tool_safe
@@ -140,6 +183,7 @@ def _type_text(
     text: str,
     selector: dict[str, Any] | None = None,
     clear: bool = False,
+    observe: bool = False,
     device_serial: str | None = None,
 ) -> dict[str, Any]:
     serial = _serial(device_serial)
@@ -168,7 +212,13 @@ def _type_text(
         d.send_keys(text)
 
     snapshot_cache.invalidate(serial)
-    return {"ok": True, "focused_node": node_info}
+    result: dict[str, Any] = {"ok": True, "focused_node": node_info}
+
+    if observe:
+        time.sleep(0.25)
+        result["screen"] = _observe(serial)
+
+    return result
 
 
 @tool_safe
@@ -190,7 +240,10 @@ def register(mcp: FastMCP) -> None:
         description=(
             "Tap an element. Prefer selector (semantic) over x,y coordinates. "
             "Selector keys: id (SoM number from get_screen), text, text_contains, resource_id, content_desc, class, index. "
-            "Set long_press=true for long-tap. Returns resolved strategy and coordinates."
+            "Set long_press=true for long-tap. "
+            "By default (observe=true) returns the updated screen tree and screen_changed flag "
+            "so you can confirm your action worked without an extra get_screen call. "
+            "Set observe=false to skip the post-tap screen capture."
         ),
     )(_tap)
 
@@ -199,7 +252,8 @@ def register(mcp: FastMCP) -> None:
         description=(
             "Swipe on the screen. Use direction='up'|'down'|'left'|'right' for scroll gestures, "
             "or from_selector+to_selector for drag, or x1,y1,x2,y2 for precise swipe. "
-            "duration_ms controls speed (higher = slower)."
+            "duration_ms controls speed (higher = slower). "
+            "By default (observe=true) returns the updated screen tree and screen_changed flag."
         ),
     )(_swipe)
 
@@ -208,7 +262,8 @@ def register(mcp: FastMCP) -> None:
         description=(
             "Type text into the focused field or a specific element. "
             "Use selector to focus the target element first. "
-            "Set clear=true to wipe existing text before typing."
+            "Set clear=true to wipe existing text before typing. "
+            "Set observe=true to capture the screen after typing."
         ),
     )(_type_text)
 
