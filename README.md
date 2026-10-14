@@ -18,8 +18,9 @@
 ## Quick Start (30 seconds)
 
 ```bash
-# 1. Install
-uv tool install adb-mcp        # or: pip install adb-mcp
+# 1. Install (from GitHub — the "adb-mcp" name on PyPI belongs to an unrelated project)
+uv tool install git+https://github.com/HarounAbdelsamad/adb-mcp.git
+# or: pip install git+https://github.com/HarounAbdelsamad/adb-mcp.git
 
 # 2. Plug in a phone with USB debugging enabled, confirm it shows up
 adb devices
@@ -72,21 +73,25 @@ once the surface exceeds ~19 tools. This server is different:
 
 ## Installation
 
+> **Note:** The `adb-mcp` name on PyPI belongs to a different, unrelated
+> project — `pip install adb-mcp` or `uv tool install adb-mcp` will **not**
+> install this server. Install from GitHub instead, as shown below.
+
 ### With uv (recommended)
 
 ```bash
 # As a global tool (best for daily use)
-uv tool install adb-mcp
+uv tool install git+https://github.com/HarounAbdelsamad/adb-mcp.git
 adb-mcp --help
 
 # Or one-shot without persistent install
-uvx adb-mcp
+uvx --from git+https://github.com/HarounAbdelsamad/adb-mcp.git adb-mcp
 ```
 
 ### With pip
 
 ```bash
-pip install adb-mcp
+pip install git+https://github.com/HarounAbdelsamad/adb-mcp.git
 adb-mcp --help
 ```
 

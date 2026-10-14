@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Pinned `mcp` to `>=1.7,<2.0`. `mcp` 2.x removes `mcp.server.fastmcp`
+  (renamed to `mcp.server.mcpserver.MCPServer`), which this project's
+  `server.py` and `tools/*` modules import directly. An unbounded
+  `mcp>=1.7` dependency could resolve `mcp` 2.x on a fresh install and
+  crash on startup with `ModuleNotFoundError`.
+
 ## [0.1.0] - 2026-05-24
 
 ### Added
